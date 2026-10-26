@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>In-Line Inspection Data Input Web App</title>
+  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root {
+      --primary: #1F497D;
+      --primary-dark: #16365C;
+      --accent: #0078D4;
+      --accent-hover: #106EBE;
+      --success: #107C41;
+      --major: #D83B01;
+      --minor: #2E7D32;
+      --bg: #F4F6F9;
+      --card-bg: #FFFFFF;
+      --text: #323130;
+      --border: #EDEBE9;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg); color: var(--text); padding: 20px; line-height: 1.4; }
+    .container { max-width: 1350px; margin: 0 auto; }
+    
+    .header {
+      background: linear-gradient(135deg, var(--primary) 0%, #2A5A9E 100%);
+      color: white; padding: 20px 24px; border-radius: 12px; margin-bottom: 20px;
+      display: flex; justify-content: space-between; align-items: center;
+      box-shadow: 0 4px 15px rgba(31,73,125,0.18);
+    }
+    .header h1 { font-size: 22px; font-weight: 700; }
+    .header p { font-size: 13px; opacity: 0.9; margin-top: 5px; }
+    .file-status {
+      background: rgba(255,255,255,0.18); padding: 8px 16px; border-radius: 20px;
+      font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px;
+    }
+    .indicator { width: 10px; height: 10px; border-radius: 50%; background: #F2C94C; }
+    .indicator.connected { background: #6FCF97; }
+
+    .connect-banner {
+      background: #EBF3FC; border: 1.5px dashed var(--accent); border-radius: 10px;
+      padding: 14px 20px; margin-bottom: 20px; display: flex; justify-content: space-between;
+      align-items: center; gap: 15px; flex-wrap: wrap;
+    }
+    .connect-text { font-size: 13px; color: #004578; flex: 1; }
+    .connect-text strong { color: var(--primary); font-size: 14px; }
+    .btn-connect {
+      background: var(--accent); color: white; border: none; padding: 9px 18px;
+      border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px; transition: 0.2s;
+    }
+    .btn-connect:hover { background: var(--accent-hover); }
+
+    .grid-order {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 16px; background: var(--card-bg); padding: 22px; border-radius: 10px;
+      margin-bottom: 20px; border: 1px solid var(--border); box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    }
+    .form-group { display: flex; flex-direction: column; position: relative; }
+    .form-group label { font-size: 11.5px; font-weight: 700; color: #505050; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .form-group input, .form-group select {
+      padding: 9px 12px; border: 1.5px solid #C8C6C4; border-radius: 6px;
+      font-size: 14px; outline: none; transition: 0.2s; background: white;
+    }
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,120,212,0.15);
+    }
+    .form-group input[readonly] { background-color: #F8F9FA; color: #555; cursor: not-allowed; border-color: #E1DFDD; }
+    .highlight-input { border-color: var(--accent) !important; background: #FAF9F8 !important; font-weight: 600; }
+
+    .suggestions-list {
+      position: absolute; top: 100%; left: 0; right: 0; max-height: 260px;
+      background: #FFFFFF; border: 1px solid #0078D4; border-radius: 6px;
+      overflow-y: auto; z-index: 1000; box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+      display: none; margin-top: 3px;
+    }
+    .suggestion-item {
+      padding: 9px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #F3F2F1;
+      display: flex; flex-direction: column; gap: 2px;
+    }
+    .suggestion-item:hover, .suggestion-item.active { background-color: #EBF3FC; }
+    .suggestion-item .s-work { font-weight: 700; color: #1F497D; }
+    .suggestion-item .s-sub { font-size: 11.5px; color: #605E5C; }
+
+    .metrics-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 22px; }
+    .metric-card {
+      background: white; padding: 16px 20px; border-radius: 8px; border: 1px solid var(--border);
+      border-left: 5px solid var(--primary); display: flex; justify-content: space-between; align-items: center;
+    }
+    .metric-card.major { border-left-color: var(--major); }
+    .metric-card.minor { border-left-color: var(--minor); }
+    .metric-card.rate { border-left-color: #F2994A; }
+    .metric-title { font-size: 11px; text-transform: uppercase; font-weight: 700; color: #605E5C; }
+    .metric-val { font-size: 26px; font-weight: 800; color: var(--text); }
+
+    .section-title {
+      font-size: 16px; font-weight: 700; color: var(--primary); margin: 20px 0 12px;
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+    }
+    .search-box {
+      padding: 8px 16px; border: 1.5px solid #C8C6C4; border-radius: 20px;
+      font-size: 13px; width: 320px; outline: none;
+    }
+    .sections-container { display: flex; flex-direction: column; gap: 12px; }
+    .section-box { background: white; border-radius: 8px; border: 1px solid var(--border); overflow: hidden; }
+    .section-header {
+      background: #FAF9F8; padding: 13px 20px; font-size: 14px; font-weight: 700;
+      color: var(--primary); cursor: pointer; display: flex; justify-content: space-between;
+      align-items: center; border-bottom: 1px solid var(--border); user-select: none;
+    }
+    .section-header:hover { background: #F3F2F1; }
+    .sec-badge { font-size: 12px; padding: 3px 10px; border-radius: 12px; background: #EDEBE9; color: #323130; }
+    .sec-badge.active { background: #FDE7E9; color: var(--major); font-weight: 700; }
+    .section-body {
+      padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px;
+    }
+    
+    .defect-card {
+      background: #FFFFFF; border: 1.5px solid #EDEBE9; border-radius: 8px;
+      padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; transition: 0.15s;
+    }
+    .defect-card.has-major { background: #FDF3F2; border-color: var(--major); }
+    .defect-card.has-minor { background: #F2F8F4; border-color: var(--minor); }
+    .defect-info { flex: 1; margin-right: 10px; }
+    .defect-name { font-size: 13px; font-weight: 600; color: #201F1E; }
+    .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-top: 4px; }
+    .tag.major { background: #FDE7E9; color: var(--major); }
+    .tag.minor { background: #DFF6DD; color: var(--minor); }
+    
+    .counter { display: flex; align-items: center; gap: 6px; }
+    .btn-step {
+      width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid #C8C6C4;
+      background: white; font-weight: bold; cursor: pointer; display: flex;
+      justify-content: center; align-items: center; font-size: 16px; transition: 0.15s;
+    }
+    .btn-step:hover { background: #EDEBE9; border-color: #8A8886; }
+    .counter input {
+      width: 46px; text-align: center; font-size: 15px; font-weight: 700;
+      padding: 5px; border: 1.5px solid #C8C6C4; border-radius: 6px; outline: none;
+    }
+
+    .action-bar {
+      margin-top: 30px; display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; background: white; padding: 18px 24px; border-radius: 12px;
+      border: 1px solid var(--border); box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+      position: sticky; bottom: 20px; z-index: 100;
+    }
+    .btn-group-left, .btn-group-right { display: flex; gap: 10px; align-items: center; }
+    .btn {
+      padding: 12px 22px; border-radius: 6px; font-size: 14px; font-weight: 600;
+      cursor: pointer; border: none; transition: 0.2s; display: inline-flex; align-items: center; gap: 8px;
+    }
+    .btn-secondary { background: #F3F2F1; color: #323130; }
+    .btn-secondary:hover { background: #EDEBE9; }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-success { background: var(--success); color: white; font-weight: 700; box-shadow: 0 2px 6px rgba(16,124,65,0.25); }
+    .btn-success:hover { background: #0E6836; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    
+    <div class="header">
+      <div>
+        <h1>In-Line Inspection Data Input Web App</h1>
+        <p>Auto-fill by Work No. (SO NO new / FTY No.) | Lines: AB6 & SB6 Workshops</p>
+      </div>
+      <div class="file-status">
+        <span class="indicator" id="fileIndicator"></span>
+        <span id="fileStatusText">Excel File: Chưa liên kết</span>
+      </div>
+    </div>
+
+    <div class="connect-banner">
+      <button class="btn-connect" id="btnUploadWip" style="background: #107C41;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>
+        Nạp File WIP / Schedule (.xls, .xlsx)
+      </button>
+      <input type="file" id="wipFileInput" accept=".xlsx, .xls" style="display: none;" />
+
+      <div class="connect-text">
+        <strong>Liên kết file Excel tổng:</strong> Chọn file (<code>Inline_Monthly_Report.xlsx</code>). Khi bấm "Lưu trực tiếp vào File Excel", Web App sẽ ghi nối dòng vào sheet <code>Input</code>.
+      </div>
+      <button class="btn-connect" id="btnSelectFile">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+        Liên Kết File Excel
+      </button>
+    </div>
+
+    <div class="grid-order">
+      <div class="form-group">
+        <label>Inspection Date</label>
+        <input type="date" id="inspDate" />
+      </div>
+      <div class="form-group">
+        <label>Building / Line (11 Lines)</label>
+        <select id="lineSelect"></select>
+      </div>
+      <div class="form-group" style="grid-column: span 1;">
+        <label style="color: var(--primary); font-weight:700;">Work No. * (SO NO new / FTY No.)</label>
+        <input type="text" id="workNoInput" class="highlight-input" placeholder="Gõ SO NO new hoặc PO..." autocomplete="off" />
+        <div id="workNoSuggestions" class="suggestions-list"></div>
+      </div>
+      <div class="form-group">
+        <label>PO No.</label>
+        <input type="text" id="poNo" readonly placeholder="Tự động điền từ WIP" />
+      </div>
+      <div class="form-group" style="grid-column: span 2;">
+        <label>Style Name</label>
+        <input type="text" id="styleName" readonly placeholder="Tự động điền từ WIP" />
+      </div>
+      <div class="form-group">
+        <label>SKU No.</label>
+        <input type="text" id="skuNo" readonly placeholder="Tự động điền từ WIP" />
+      </div>
+      <div class="form-group">
+        <label>Colorway</label>
+        <input type="text" id="colorway" readonly placeholder="Tự động điền từ WIP" />
+      </div>
+      <div class="form-group">
+        <label>Ship To</label>
+        <input type="text" id="shipTo" readonly placeholder="Tự động điền từ WIP" />
+      </div>
+      <div class="form-group">
+        <label>Order Qty (prs)</label>
+        <input type="number" id="orderQty" readonly placeholder="0" />
+      </div>
+      <div class="form-group">
+        <label>Ex-Factory Date</label>
+        <input type="text" id="exfDate" readonly placeholder="Tự động điền từ WIP" />
+      </div>
+      <div class="form-group">
+        <label style="color: var(--primary); font-weight:700;">Qty Inspected *</label>
+        <input type="number" id="qtyInspected" value="30" min="1" />
+      </div>
+    </div>
+
+    <div class="metrics-bar">
+      <div class="metric-card">
+        <div>
+          <div class="metric-title">Total Defects Qty</div>
+          <div class="metric-val" id="dispTotalDefects">0</div>
+        </div>
+      </div>
+      <div class="metric-card rate">
+        <div>
+          <div class="metric-title">Overall Defect Rate</div>
+          <div class="metric-val" id="dispDefectRate">0.00%</div>
+        </div>
+      </div>
+      <div class="metric-card major">
+        <div>
+          <div class="metric-title">Major Rate (41 Lỗi)</div>
+          <div class="metric-val" id="dispMajorRate">0.00%</div>
+        </div>
+      </div>
+      <div class="metric-card minor">
+        <div>
+          <div class="metric-title">Minor Rate (32 Lỗi)</div>
+          <div class="metric-val" id="dispMinorRate">0.00%</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-title">
+      <span>Nhập Lỗi Theo Công Đoạn (73 Phân Loại Lỗi)</span>
+      <input type="text" id="searchDefect" class="search-box" placeholder="Lọc theo tên lỗi hoặc công đoạn..." />
+    </div>
+
+    <div class="sections-container" id="sectionsContainer"></div>
+
+    <div class="action-bar">
+      <div class="btn-group-left">
+        <button class="btn btn-secondary" id="btnReset">Clear Form</button>
+        <button class="btn btn-secondary" id="btnCopyTsv">Copy Row to Clipboard</button>
+      </div>
+      <div class="btn-group-right">
+        <button class="btn btn-primary" id="btnExportJson">Export Backup File</button>
+        <button class="btn btn-success" id="btnSaveToExcel">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z"/></svg>
+          Lưu Trực Tiếp Vào File Excel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const DEFECTS = [{"code": "DEF-001", "section": "RM Materials/Die Cutting", "name": "Wrong Color/Shade", "is_major": true}, {"code": "DEF-002", "section": "RM Materials/Die Cutting", "name": "Incorrect to Specs", "is_major": true}, {"code": "DEF-003", "section": "RM Materials/Die Cutting", "name": "Damaged RM Materials", "is_major": true}, {"code": "DEF-004", "section": "RM Materials/Die Cutting", "name": "Furry Edges", "is_major": false}, {"code": "DEF-005", "section": "Preparation Work", "name": "Peeled off size label", "is_major": false}, {"code": "DEF-006", "section": "Preparation Work", "name": "Punching hole off position", "is_major": false}, {"code": "DEF-007", "section": "Preparation Work", "name": "Peeled off Printing", "is_major": false}, {"code": "DEF-008", "section": "Preparation Work", "name": "Poor buffing", "is_major": false}, {"code": "DEF-009", "section": "Preparation Work", "name": "Poor Debossing/Embossing", "is_major": false}, {"code": "DEF-010", "section": "Preparation Work", "name": "No-sew delamination -", "is_major": false}, {"code": "DEF-011", "section": "Preparation Work", "name": "Poor Embroidery", "is_major": false}, {"code": "DEF-012", "section": "Preparation Work", "name": "POOR RUBBERIZED PRINTING", "is_major": false}, {"code": "DEF-013", "section": "Bootie line", "name": "Overlap/Gap at zigzag stitching", "is_major": true}, {"code": "DEF-014", "section": "Bootie line", "name": "Delamination/Creased/ Off-set Hydro Guard Tape", "is_major": true}, {"code": "DEF-015", "section": "Bootie line", "name": "Peeled off/Creased Gasket", "is_major": true}, {"code": "DEF-016", "section": "Bootie line", "name": "Damaged bootie", "is_major": true}, {"code": "DEF-017", "section": "Stitching", "name": "Crooked stitching", "is_major": true}, {"code": "DEF-018", "section": "Stitching", "name": "Missing stitches/ Mis-stitch size/Missing component", "is_major": true}, {"code": "DEF-019", "section": "Stitching", "name": "Broken Stitches", "is_major": true}, {"code": "DEF-020", "section": "Stitching", "name": "Slipped/Jump/Loose/Run-off Stitches", "is_major": false}, {"code": "DEF-021", "section": "Stitching", "name": "Stitches Per Inches /Stitching spacing/ Stitching margin", "is_major": false}, {"code": "DEF-022", "section": "Stitching", "name": "Exposed Thread Ends", "is_major": false}, {"code": "DEF-023", "section": "Stitching", "name": "Exposed Reinforcements/peeling off reinforcement", "is_major": false}, {"code": "DEF-024", "section": "Stitching", "name": "Asymmetrical Upper", "is_major": false}, {"code": "DEF-025", "section": "Stitching", "name": "Stains on upper", "is_major": false}, {"code": "DEF-026", "section": "Stitching", "name": "Wrinkled leather/Mesh", "is_major": true}, {"code": "DEF-027", "section": "Stitching", "name": "Needle holes", "is_major": true}, {"code": "DEF-028", "section": "Stitching", "name": "Color unmatching pair", "is_major": false}, {"code": "DEF-029", "section": "Stitching", "name": "Leather color faded", "is_major": false}, {"code": "DEF-030", "section": "Stitching", "name": "Creased lining", "is_major": true}, {"code": "DEF-031", "section": "Stitching", "name": "Poor turning collar/tongue shape", "is_major": false}, {"code": "DEF-032", "section": "Stitching", "name": "Furry mesh", "is_major": false}, {"code": "DEF-033", "section": "Stitching", "name": "Scratched/Damaged leather/component", "is_major": true}, {"code": "DEF-034", "section": "Pre-fitting", "name": "Wrong mold used", "is_major": true}, {"code": "DEF-035", "section": "Pre-fitting", "name": "Raised/Damaged Counter box", "is_major": true}, {"code": "DEF-036", "section": "Pre-fitting", "name": "Collar blown out", "is_major": true}, {"code": "DEF-037", "section": "Toe & Heel Caps", "name": "Bonding Gaps", "is_major": true}, {"code": "DEF-038", "section": "Toe & Heel Caps", "name": "Blooming/Cracking", "is_major": true}, {"code": "DEF-040", "section": "Toe & Heel Caps", "name": "Off Center", "is_major": true}, {"code": "DEF-040b", "section": "Toe & Heel Caps", "name": "X-ray Rubber Caps", "is_major": true}, {"code": "DEF-041", "section": "Toe & Heel Caps", "name": "Over cementing", "is_major": false}, {"code": "DEF-042", "section": "Toe & Heel Caps", "name": "Edged Untrimmed", "is_major": false}, {"code": "DEF-043", "section": "Hardwares & Accessories", "name": "Unfunctional Zipper", "is_major": true}, {"code": "DEF-044", "section": "Hardwares & Accessories", "name": "Wrong Eyelets", "is_major": true}, {"code": "DEF-045", "section": "Hardwares & Accessories", "name": "Movable/Crooked Eyelets", "is_major": true}, {"code": "DEF-046", "section": "Hardwares & Accessories", "name": "Hardware Corrosions", "is_major": true}, {"code": "DEF-047", "section": "Hardwares & Accessories", "name": "Scratched eyelet/Damaged eyelet", "is_major": true}, {"code": "DEF-048", "section": "Hardwares & Accessories", "name": "Missing eyelet washer", "is_major": true}, {"code": "DEF-049", "section": "Stock-Fitting", "name": "Crooked/Gap Bottom attached", "is_major": true}, {"code": "DEF-050", "section": "Stock-Fitting", "name": "Bonding Gaps", "is_major": true}, {"code": "DEF-051", "section": "Stock-Fitting", "name": "Deformed/Damaged Parts", "is_major": false}, {"code": "DEF-052", "section": "Stock-Fitting", "name": "Edges Untrimmed", "is_major": false}, {"code": "DEF-053", "section": "Stock-Fitting", "name": "Bottoms Unclean", "is_major": false}, {"code": "DEF-054", "section": "Stock-Fitting", "name": "Bleeding/ peeled off painting", "is_major": false}, {"code": "DEF-055", "section": "Lasting", "name": "Crooked Lasting", "is_major": true}, {"code": "DEF-056", "section": "Lasting", "name": "Asymmetrical Upper", "is_major": false}, {"code": "DEF-057", "section": "Lasting", "name": "Incorrect last", "is_major": true}, {"code": "DEF-058", "section": "Lasting", "name": "Poor strobel stitching", "is_major": false}, {"code": "DEF-059", "section": "Assembly", "name": "Creased/Overfoamed Midsoles", "is_major": true}, {"code": "DEF-060", "section": "Assembly", "name": "Bonding Gaps to Uppers", "is_major": true}, {"code": "DEF-061", "section": "Assembly", "name": "Creased/Wrinkled Upper / Mesh", "is_major": true}, {"code": "DEF-062", "section": "Assembly", "name": "Creased/Bubbled Lining", "is_major": true}, {"code": "DEF-063", "section": "Assembly", "name": "Over/Under Cementing/Stains", "is_major": false}, {"code": "DEF-064", "section": "Assembly", "name": "Damaged material", "is_major": true}, {"code": "DEF-065", "section": "Assembly", "name": "Exposed buffing line", "is_major": true}, {"code": "DEF-066", "section": "Assembly", "name": "Crooked toe/heel", "is_major": true}, {"code": "DEF-067", "section": "Assembly", "name": "Broken stitch", "is_major": true}, {"code": "DEF-068", "section": "Assembly", "name": "Rocking", "is_major": true}, {"code": "DEF-069", "section": "Packaging", "name": "Incorrect Size Pairing", "is_major": true}, {"code": "DEF-070", "section": "Packaging", "name": "Stains on Finished Shoes", "is_major": false}, {"code": "DEF-071", "section": "Packaging", "name": "Improper Lacing", "is_major": false}, {"code": "DEF-072", "section": "Packaging", "name": "Improper Footbed Inserts", "is_major": false}, {"code": "DEF-073", "section": "Packaging", "name": "Incorrect Packaging", "is_major": false}];
+
+    let WIP_DATA = [];
+    
+    // Danh sách 11 Lines cập nhật theo yêu cầu
+    const LINES_LIST = [
+      "AB6-2F",
+      "AB6A-2F",
+      "AB6A-3F",
+      "AB6C-2F",
+      "AB6-3F",
+      "SB6-3F",
+      "SB6C1-3F",
+      "SB6C2-3F",
+      "SB6A-3F",
+      "SB6-2F",
+      "SB6A-2F"
+    ];
+
+    let localFileHandle = null;
+
+    // Gán ngày mặc định hôm nay
+    document.getElementById('inspDate').valueAsDate = new Date();
+
+    // Khởi tạo select list Line
+    const lineSelect = document.getElementById('lineSelect');
+    LINES_LIST.forEach((l, idx) => {
+      const opt = document.createElement('option');
+      opt.value = l;
+      opt.textContent = l;
+      if (idx === 0) opt.selected = true;
+      lineSelect.appendChild(opt);
+    });
+
+    const normalizeHeader = (str) => String(str || '').toLowerCase().replace(/[\s_\.\-\r\n\#\(\)]/g, '');
+
+    // Đọc cache từ localStorage
+    window.addEventListener('DOMContentLoaded', () => {
+      const saved = localStorage.getItem('CUSTOM_WIP_DATA');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            WIP_DATA = parsed;
+          }
+        } catch (e) {
+          localStorage.removeItem('CUSTOM_WIP_DATA');
+        }
+      }
+    });
+
+    function cleanNumberStr(val) {
+      if (val === null || val === undefined) return '';
+      if (typeof val === 'number') {
+        return Math.floor(val) === val ? String(val) : String(val);
+      }
+      let s = String(val).trim();
+      if (/^\d+\.0+$/.test(s)) {
+        return s.split('.')[0];
+      }
+      return s;
+    }
+
+    function formatToISODate(val) {
+      if (!val) return '';
+      if (val instanceof Date) {
+        return val.toISOString().slice(0, 10);
+      }
+      if (typeof val === 'number') {
+        const jsDate = new Date(Math.round((val - 25569) * 86400 * 1000));
+        if (!isNaN(jsDate.getTime())) {
+          return jsDate.toISOString().slice(0, 10);
+        }
+      }
+      const s = String(val).trim();
+      const match = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+      if (match) {
+        return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+      }
+      return s;
+    }
+
+    // --- NẠP FILE WIP (ƯU TIÊN CỘT D: SO NO NEW) ---
+    document.getElementById('btnUploadWip').addEventListener('click', () => {
+      document.getElementById('wipFileInput').click();
+    });
+
+    document.getElementById('wipFileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      const btn = document.getElementById('btnUploadWip');
+      const originalText = btn.innerHTML;
+      btn.textContent = 'Đang xử lý dữ liệu...';
+      btn.disabled = true;
+
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+
+        const workbook = XLSX.read(arrayBuffer, {
+          type: 'array',
+          cellFormula: false,
+          cellHTML: false,
+          cellStyles: false
+        });
+
+        // Tìm sheet WIP
+        let sheetName = workbook.SheetNames.find(n => n.trim().toUpperCase() === 'WIP') ||
+                        workbook.SheetNames.find(n => n.toUpperCase().includes('WIP')) ||
+                        workbook.SheetNames[0];
+
+        const sheet = workbook.Sheets[sheetName];
+        if (!sheet) {
+          alert('Không tìm thấy sheet WIP trong file Excel!');
+          return;
+        }
+
+        const sheetRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        if (!sheetRows || sheetRows.length < 2) {
+          alert('Sheet WIP không có đủ dữ liệu!');
+          return;
+        }
+
+        let headerRowIdx = 0;
+        for (let r = 0; r < Math.min(10, sheetRows.length); r++) {
+          const rowNorm = sheetRows[r].map(c => normalizeHeader(c));
+          if (rowNorm.some(c => c.includes('ftyno') || c.includes('workno') || c.includes('modelname') || c.includes('stylename') || c.includes('sono'))) {
+            headerRowIdx = r;
+            break;
+          }
+        }
+
+        const headers1 = sheetRows[headerRowIdx] || [];
+        const headers2 = sheetRows[headerRowIdx + 1] || [];
+        
+        let colSoNoNew = -1; // Cột D (SO NO new)
+        let colFtyNo = -1;   // Cột B (FTY No#)
+        let colPo = -1;      // Cột A (PO#)
+        let colSku = -1;     // Cột G (SKUNo#)
+        let colStyle = -1;   // Cột F (Model Name)
+        let colColor = -1;   // Cột H (Colorway)
+        let colQty = -1;     // Cột I (QTY)
+        let colExf = -1;     // Cột J (Requested / Ex-Fcty date)
+        let colShipTo = -1;  // Cột AE (Destination)
+
+        for (let c = 0; c < Math.max(headers1.length, headers2.length); c++) {
+          const h1 = normalizeHeader(headers1[c]);
+          const h2 = normalizeHeader(headers2[c]);
+          const combined = h1 + h2;
+
+          if (colSoNoNew === -1 && (combined.includes('sononew') || combined.includes('sonew') || (c === 3 && combined.includes('so')))) {
+            colSoNoNew = c;
+          }
+          if (colFtyNo === -1 && (h1.includes('ftyno') || h1.includes('factoryno') || h1.includes('workno') || h1.includes('work_no'))) {
+            colFtyNo = c;
+          }
+          if (colPo === -1 && (h1 === 'po' || h1.startsWith('po'))) colPo = c;
+          if (colSku === -1 && (h1.includes('sku') || h1.startsWith('sku'))) colSku = c;
+          if (colStyle === -1 && (h1.includes('modelname') || h1.includes('stylename') || h1 === 'style' || h1 === 'model')) colStyle = c;
+          if (colColor === -1 && (h1.includes('colorway') || h1.includes('color'))) colColor = c;
+          if (colShipTo === -1 && (h1.includes('destination') || h1.includes('shipto') || h1.includes('ship_to'))) colShipTo = c;
+          if (colQty === -1 && (h1 === 'qty' || h1.includes('orderqty') || h1.includes('order_qty'))) colQty = c;
+          if (colExf === -1 && (combined.includes('exfctydate') || combined.includes('requestedexfty') || h1.includes('exf') || combined.includes('requested'))) colExf = c;
+        }
+
+        // Mặc định chuẩn vị trí cột nếu file OBOZ Production Schedule không có text tiêu đề tại Cột D
+        if (colSoNoNew === -1) colSoNoNew = 3; // Cột D (SO NO new)
+        if (colFtyNo === -1) colFtyNo = 1;     // Cột B (FTY No#)
+        if (colPo === -1) colPo = 0;           // Cột A (PO#)
+        if (colStyle === -1) colStyle = 5;     // Cột F (Model Name)
+        if (colSku === -1) colSku = 6;         // Cột G (SKUNo#)
+        if (colColor === -1) colColor = 7;     // Cột H (Colorway)
+        if (colQty === -1) colQty = 8;         // Cột I (QTY)
+        if (colExf === -1) colExf = 9;         // Cột J (Requested / Ex-Fcty date)
+        if (colShipTo === -1) colShipTo = 30;  // Cột AE (Destination)
+
+        const newWipList = [];
+        const startDataRow = headerRowIdx + (headers2.some(h => String(h).trim().length > 0) ? 2 : 1);
+
+        for (let r = startDataRow; r < sheetRows.length; r++) {
+          const row = sheetRows[r];
+          if (!row || row.length === 0) continue;
+
+          // Lấy SO NO new từ Cột D
+          let soNewRaw = row[colSoNoNew];
+          let soNewStr = cleanNumberStr(soNewRaw);
+          
+          // Lấy FTY No# từ Cột B
+          let ftyStr = String(row[colFtyNo] || '').trim();
+          let poVal = String(row[colPo] || '').trim();
+
+          // Dùng SO NO new làm Work No chính, nếu trống thì fallback dùng FTY No#
+          let primaryWorkNo = soNewStr || ftyStr;
+
+          if (!primaryWorkNo || primaryWorkNo.toUpperCase().includes('TOTAL') || primaryWorkNo.toUpperCase().includes('BOOKED')) {
+            continue;
+          }
+
+          let styleVal = colStyle !== -1 ? String(row[colStyle] || '').trim() : '';
+          let skuVal = colSku !== -1 ? cleanNumberStr(row[colSku]) : '';
+          let colorVal = colColor !== -1 ? String(row[colColor] || '').trim() : '';
+          let shipVal = colShipTo !== -1 ? String(row[colShipTo] || '').trim() : '';
+          let qtyVal = colQty !== -1 ? (parseInt(row[colQty]) || 0) : 0;
+          let rawExf = colExf !== -1 ? row[colExf] : '';
+          let exfStr = formatToISODate(rawExf);
+
+          newWipList.push({
+            work_no: primaryWorkNo,
+            so_no_new: soNewStr,
+            fty_no: ftyStr,
+            po: poVal,
+            sku: skuVal,
+            style_name: styleVal,
+            colorway: colorVal,
+            ship_to: shipVal,
+            order_qty: qtyVal,
+            exf: exfStr
+          });
+        }
+
+        if (newWipList.length === 0) {
+          alert('Không tìm thấy bản ghi hợp lệ nào trong sheet WIP!');
+          return;
+        }
+
+        WIP_DATA = newWipList;
+        localStorage.setItem('CUSTOM_WIP_DATA', JSON.stringify(WIP_DATA));
+        alert(`Thành công! Đã nạp ${WIP_DATA.length} mã đơn.\nWork No. được ưu tiên từ Cột D (SO NO new), đồng thời hỗ trợ tìm bằng FTY No# và PO.`);
+      } catch (err) {
+        console.error(err);
+        alert('Lỗi đọc file WIP: ' + err.message);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        e.target.value = '';
+      }
+    });
+
+    // --- TỰ ĐỘNG ĐIỀN THÔNG TIN & TÌM KIẾM THEO CỘT D (SO NO NEW) ---
+    const workNoInput = document.getElementById('workNoInput');
+    const suggestionsList = document.getElementById('workNoSuggestions');
+
+    function fillOrderInfo(item) {
+      if (!item) return;
+      workNoInput.value = item.work_no;
+      document.getElementById('poNo').value = item.po || '';
+      document.getElementById('styleName').value = item.style_name || '';
+      document.getElementById('skuNo').value = item.sku || '';
+      document.getElementById('colorway').value = item.colorway || '';
+      document.getElementById('shipTo').value = item.ship_to || '';
+      document.getElementById('orderQty').value = item.order_qty || 0;
+      document.getElementById('exfDate').value = item.exf || '';
+      suggestionsList.style.display = 'none';
+    }
+
+    let searchTimer = null;
+    workNoInput.addEventListener('input', function() {
+      clearTimeout(searchTimer);
+      const q = this.value.trim().toUpperCase();
+
+      if (!q) {
+        suggestionsList.style.display = 'none';
+        return;
+      }
+
+      searchTimer = setTimeout(() => {
+        const matches = [];
+        for (let i = 0; i < WIP_DATA.length; i++) {
+          const w = WIP_DATA[i];
+          if (!w) continue;
+          
+          const matchSoNew = w.so_no_new && w.so_no_new.toUpperCase().includes(q);
+          const matchWorkNo = w.work_no && w.work_no.toUpperCase().includes(q);
+          const matchFty = w.fty_no && w.fty_no.toUpperCase().includes(q);
+          const matchPo = w.po && w.po.toUpperCase().includes(q);
+          const matchStyle = w.style_name && w.style_name.toUpperCase().includes(q);
+
+          if (matchSoNew || matchWorkNo || matchFty || matchPo || matchStyle) {
+            matches.push(w);
+            if (matches.length >= 20) break;
+          }
+        }
+
+        if (matches.length === 0) {
+          suggestionsList.style.display = 'none';
+          return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        matches.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'suggestion-item';
+          
+          const labelTitle = item.so_no_new 
+            ? `${item.so_no_new} <span style="font-weight:normal;color:#666;">(FTY: ${item.fty_no || 'N/A'})</span>`
+            : item.work_no;
+
+          div.innerHTML = `
+            <span class="s-work">${labelTitle}</span>
+            <span class="s-sub">${item.style_name || 'N/A'} | PO: ${item.po || 'N/A'} | SKU: ${item.sku || 'N/A'} | Qty: ${item.order_qty}</span>
+          `;
+          div.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            fillOrderInfo(item);
+          });
+          fragment.appendChild(div);
+        });
+
+        suggestionsList.innerHTML = '';
+        suggestionsList.appendChild(fragment);
+        suggestionsList.style.display = 'block';
+
+        const exact = WIP_DATA.find(w => 
+          (w.so_no_new && w.so_no_new.toUpperCase() === q) ||
+          (w.work_no && w.work_no.toUpperCase() === q) ||
+          (w.fty_no && w.fty_no.toUpperCase() === q)
+        );
+        if (exact) {
+          fillOrderInfo(exact);
+        }
+      }, 100);
+    });
+
+    workNoInput.addEventListener('blur', () => {
+      setTimeout(() => { suggestionsList.style.display = 'none'; }, 200);
+    });
+
+    // --- HIỂN THỊ DANH SÁCH LỖI VÀ TÍNH TOÁN METRICS ---
+    const sectionsContainer = document.getElementById('sectionsContainer');
+    const sections = [...new Set(DEFECTS.map(d => d.section))];
+    const defectValues = {};
+
+    sections.forEach(secName => {
+      const secDefects = DEFECTS.filter(d => d.section === secName);
+      const secBox = document.createElement('div');
+      secBox.className = 'section-box';
+
+      const secHeader = document.createElement('div');
+      secHeader.className = 'section-header';
+      secHeader.innerHTML = `<span>${secName} (${secDefects.length} lỗi)</span><span class="sec-badge" id="sec-badge-${secName}">0 pcs</span>`;
+      
+      const secBody = document.createElement('div');
+      secBody.className = 'section-body';
+
+      secDefects.forEach(d => {
+        defectValues[d.code] = 0;
+        const card = document.createElement('div');
+        card.className = 'defect-card';
+        card.id = `card-${d.code}`;
+        card.innerHTML = `
+          <div class="defect-info">
+            <div class="defect-name">${d.name}</div>
+            <span class="tag ${d.is_major ? 'major' : 'minor'}">${d.is_major ? 'MAJOR' : 'MINOR'}</span>
+          </div>
+          <div class="counter">
+            <button class="btn-step" type="button" onclick="updateDefect('${d.code}', -1)">-</button>
+            <input type="number" id="input-${d.code}" value="0" min="0" onchange="setDefect('${d.code}', this.value)" />
+            <button class="btn-step" type="button" onclick="updateDefect('${d.code}', 1)">+</button>
+          </div>
+        `;
+        secBody.appendChild(card);
+      });
+
+      secHeader.addEventListener('click', () => {
+        secBody.style.display = secBody.style.display === 'none' ? 'grid' : 'none';
+      });
+
+      secBox.appendChild(secHeader);
+      secBox.appendChild(secBody);
+      sectionsContainer.appendChild(secBox);
+    });
+
+    window.updateDefect = function(code, delta) {
+      const cur = defectValues[code] || 0;
+      const next = Math.max(0, cur + delta);
+      setDefect(code, next);
+    };
+
+    window.setDefect = function(code, val) {
+      const num = Math.max(0, parseInt(val) || 0);
+      defectValues[code] = num;
+      const inputEl = document.getElementById(`input-${code}`);
+      if (inputEl) inputEl.value = num;
+
+      const card = document.getElementById(`card-${code}`);
+      const defectObj = DEFECTS.find(d => d.code === code);
+      if (card && defectObj) {
+        if (num > 0) {
+          card.className = 'defect-card ' + (defectObj.is_major ? 'has-major' : 'has-minor');
+        } else {
+          card.className = 'defect-card';
+        }
+
+        const secDefects = DEFECTS.filter(d => d.section === defectObj.section);
+        const secTotal = secDefects.reduce((acc, cur) => acc + (defectValues[cur.code] || 0), 0);
+        const badge = document.getElementById(`sec-badge-${defectObj.section}`);
+        if (badge) {
+          badge.textContent = `${secTotal} pcs`;
+          badge.className = secTotal > 0 ? 'sec-badge active' : 'sec-badge';
+        }
+      }
+
+      recalculateMetrics();
+    };
+
+    function recalculateMetrics() {
+      const qtyInsp = Math.max(1, parseInt(document.getElementById('qtyInspected').value) || 1);
+      let totalDefects = 0;
+      let majorDefects = 0;
+
+      DEFECTS.forEach(d => {
+        const cnt = defectValues[d.code] || 0;
+        totalDefects += cnt;
+        if (d.is_major) majorDefects += cnt;
+      });
+
+      const minorDefects = totalDefects - majorDefects;
+      const overallRate = (totalDefects / qtyInsp) * 100;
+      const majorRate = (majorDefects / qtyInsp) * 100;
+      const minorRate = (minorDefects / qtyInsp) * 100;
+
+      document.getElementById('dispTotalDefects').textContent = totalDefects;
+      document.getElementById('dispDefectRate').textContent = overallRate.toFixed(2) + '%';
+      document.getElementById('dispMajorRate').textContent = majorRate.toFixed(2) + '%';
+      document.getElementById('dispMinorRate').textContent = minorRate.toFixed(2) + '%';
+    }
+
+    document.getElementById('qtyInspected').addEventListener('input', recalculateMetrics);
+
+    document.getElementById('searchDefect').addEventListener('input', function() {
+      const q = this.value.toLowerCase().trim();
+      DEFECTS.forEach(d => {
+        const card = document.getElementById(`card-${d.code}`);
+        if (!q || d.name.toLowerCase().includes(q) || d.section.toLowerCase().includes(q)) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    });
+
+    function clearForm() {
+      workNoInput.value = '';
+      document.getElementById('poNo').value = '';
+      document.getElementById('styleName').value = '';
+      document.getElementById('skuNo').value = '';
+      document.getElementById('colorway').value = '';
+      document.getElementById('shipTo').value = '';
+      document.getElementById('orderQty').value = '';
+      document.getElementById('exfDate').value = '';
+      document.getElementById('qtyInspected').value = '30';
+      DEFECTS.forEach(d => setDefect(d.code, 0));
+      workNoInput.focus();
+    }
+
+    document.getElementById('btnReset').addEventListener('click', () => {
+      if (confirm('Bạn có chắc muốn xóa trắng toàn bộ dữ liệu trên form?')) {
+        clearForm();
+      }
+    });
+
+    // --- LIÊN KẾT VÀ GHI FILE EXCEL QUA JSZIP ---
+    document.getElementById('btnSelectFile').addEventListener('click', async () => {
+      try {
+        if ('showOpenFilePicker' in window) {
+          const [handle] = await window.showOpenFilePicker({
+            types: [{
+              description: 'Excel Files',
+              accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'] }
+            }],
+            multiple: false
+          });
+          localFileHandle = handle;
+          document.getElementById('fileStatusText').textContent = `Đã liên kết: ${handle.name}`;
+          document.getElementById('fileIndicator').className = 'indicator connected';
+          alert(`Đã liên kết thành công với: ${handle.name}.\nKhi bấm "Lưu trực tiếp vào File Excel", web app sẽ ghi vào sheet Input mà không làm ảnh hưởng đến Dashboard và biểu đồ!`);
+        } else {
+          alert('Trình duyệt của bạn chưa hỗ trợ File System Access API. Hãy sử dụng Google Chrome hoặc Microsoft Edge trên máy tính.');
+        }
+      } catch (err) {
+        console.log('Hủy hoặc lỗi chọn file:', err);
+      }
+    });
+
+    function escapeXml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function createCellXml(colLetter, rowIdx, val, type, formula) {
+      const cellRef = `${colLetter}${rowIdx}`;
+      if (formula) {
+        return `<c r="${cellRef}"><f>${escapeXml(formula)}</f><v></v></c>`;
+      }
+      if (type === 'n') {
+        return `<c r="${cellRef}" t="n"><v>${val}</v></c>`;
+      }
+      if (type === 'inlineStr') {
+        return `<c r="${cellRef}" t="inlineStr"><is><t>${escapeXml(val)}</t></is></c>`;
+      }
+      return `<c r="${cellRef}"><v>${escapeXml(val)}</v></c>`;
+    }
+
+    function getColumnLetter(colIndex) {
+      let temp = colIndex + 1;
+      let letter = '';
+      while (temp > 0) {
+        let rem = (temp - 1) % 26;
+        letter = String.fromCharCode(65 + rem) + letter;
+        temp = Math.floor((temp - rem) / 26);
+      }
+      return letter;
+    }
+
+    document.getElementById('btnSaveToExcel').addEventListener('click', async () => {
+      const workNo = workNoInput.value.trim();
+      if (!workNo) {
+        alert('Vui lòng nhập hoặc chọn Work No. trước khi lưu!');
+        workNoInput.focus();
+        return;
+      }
+
+      if (!localFileHandle) {
+        if (confirm('Bạn chưa liên kết với file Excel.\nBạn có muốn chọn file Excel tổng ngay bây giờ không?')) {
+          document.getElementById('btnSelectFile').click();
+        }
+        return;
+      }
+
+      const btnSave = document.getElementById('btnSaveToExcel');
+      btnSave.disabled = true;
+      btnSave.style.opacity = '0.6';
+
+      try {
+        const file = await localFileHandle.getFile();
+        const arrayBuffer = await file.arrayBuffer();
+        const zip = await JSZip.loadAsync(arrayBuffer);
+
+        let sheetInputPath = 'xl/worksheets/sheet3.xml';
+        if (!zip.file(sheetInputPath)) {
+          const wbXmlStr = await zip.file('xl/workbook.xml').async('string');
+          const relsXmlStr = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+          const inputMatch = wbXmlStr.match(/<sheet[^>]*name="Input"[^>]*r:id="([^"]+)"/i);
+          if (inputMatch) {
+            const rId = inputMatch[1];
+            const relMatch = relsXmlStr.match(new RegExp(`<Relationship[^>]*Id="${rId}"[^>]*Target="([^"]+)"`));
+            if (relMatch) {
+              sheetInputPath = 'xl/' + relMatch[1].replace(/^\//, '').replace(/^xl\//, '');
+            }
+          }
+        }
+
+        const sheetFile = zip.file(sheetInputPath);
+        if (!sheetFile) {
+          throw new Error('Không tìm thấy sheet "Input" trong tệp Excel!');
+        }
+
+        let sheetXml = await sheetFile.async('string');
+
+        const rowRegex = /<row[^>]*r="(\d+)"/g;
+        let lastRowIdx = 1;
+        let match;
+        while ((match = rowRegex.exec(sheetXml)) !== null) {
+          const r = parseInt(match[1]);
+          if (r > lastRowIdx) lastRowIdx = r;
+        }
+
+        const nextRowIdx = lastRowIdx + 1;
+
+        const inspDateStr = document.getElementById('inspDate').value || new Date().toISOString().slice(0, 10);
+        const dt = new Date(inspDateStr);
+        const year = dt.getFullYear().toString().slice(-2);
+        const monthNum = dt.getMonth() + 1;
+        const monthStr = monthNum < 10 ? '0' + monthNum : '' + monthNum;
+        const dayStr = dt.getDate() < 10 ? '0' + dt.getDate() : '' + dt.getDate();
+        const workWeek = parseInt(`${year}${monthStr}${dayStr}`);
+        const qtyInsp = Math.max(1, parseInt(document.getElementById('qtyInspected').value) || 1);
+
+        let rowCellsXml = '';
+        rowCellsXml += createCellXml('A', nextRowIdx, workWeek, 'n');
+        rowCellsXml += createCellXml('B', nextRowIdx, monthNum, 'n');
+        rowCellsXml += createCellXml('C', nextRowIdx, inspDateStr, 'inlineStr');
+        rowCellsXml += createCellXml('D', nextRowIdx, document.getElementById('lineSelect').value, 'inlineStr');
+        rowCellsXml += createCellXml('E', nextRowIdx, workNo, 'inlineStr');
+        rowCellsXml += createCellXml('F', nextRowIdx, document.getElementById('poNo').value.trim(), 'inlineStr');
+        rowCellsXml += createCellXml('G', nextRowIdx, document.getElementById('styleName').value.trim(), 'inlineStr');
+        rowCellsXml += createCellXml('H', nextRowIdx, document.getElementById('skuNo').value.trim(), 'inlineStr');
+        rowCellsXml += createCellXml('I', nextRowIdx, document.getElementById('colorway').value.trim(), 'inlineStr');
+        rowCellsXml += createCellXml('J', nextRowIdx, document.getElementById('shipTo').value.trim(), 'inlineStr');
+        rowCellsXml += createCellXml('K', nextRowIdx, parseInt(document.getElementById('orderQty').value) || 0, 'n');
+        rowCellsXml += createCellXml('L', nextRowIdx, document.getElementById('exfDate').value.trim(), 'inlineStr');
+        rowCellsXml += createCellXml('M', nextRowIdx, qtyInsp, 'n');
+
+        const sumDefectsFormula = `SUM(R${nextRowIdx}:CL${nextRowIdx})`;
+        const defectRateFormula = `IF(M${nextRowIdx}>0, N${nextRowIdx}/M${nextRowIdx}, 0)`;
+        const minorRateFormula = `O${nextRowIdx}-Q${nextRowIdx}`;
+        const majorRateFormula = `IF(M${nextRowIdx}>0, (SUM(R${nextRowIdx}:T${nextRowIdx})+SUM(AD${nextRowIdx}:AJ${nextRowIdx})+SUM(AQ${nextRowIdx}:AR${nextRowIdx})+SUM(AU${nextRowIdx})+SUM(AX${nextRowIdx}:BE${nextRowIdx})+SUM(BH${nextRowIdx}:BO${nextRowIdx})+SUM(BT${nextRowIdx})+SUM(BV${nextRowIdx})+SUM(BX${nextRowIdx}:CA${nextRowIdx})+SUM(CC${nextRowIdx}:CH${nextRowIdx}))/M${nextRowIdx}, 0)`;
+
+        rowCellsXml += createCellXml('N', nextRowIdx, null, null, sumDefectsFormula);
+        rowCellsXml += createCellXml('O', nextRowIdx, null, null, defectRateFormula);
+        rowCellsXml += createCellXml('P', nextRowIdx, null, null, minorRateFormula);
+        rowCellsXml += createCellXml('Q', nextRowIdx, null, null, majorRateFormula);
+
+        DEFECTS.forEach((d, i) => {
+          const colLetter = getColumnLetter(17 + i);
+          const count = defectValues[d.code] || 0;
+          rowCellsXml += createCellXml(colLetter, nextRowIdx, count, 'n');
+        });
+
+        const newRowXml = `<row r="${nextRowIdx}" spans="1:90">${rowCellsXml}</row>`;
+
+        sheetXml = sheetXml.replace('</sheetData>', `${newRowXml}</sheetData>`);
+        sheetXml = sheetXml.replace(/<dimension ref="A1:CL\d+"/, `<dimension ref="A1:CL${nextRowIdx}"`);
+
+        zip.file(sheetInputPath, sheetXml);
+
+        const newContent = await zip.generateAsync({
+          type: 'arraybuffer',
+          compression: 'DEFLATE',
+          compressionOptions: { level: 6 }
+        });
+
+        const writable = await localFileHandle.createWritable();
+        await writable.write(newContent);
+        await writable.close();
+
+        alert(`LƯU THÀNH CÔNG!\n- Đã thêm dòng số ${nextRowIdx} cho Work No: "${workNo}" vào sheet Input.\n- Dashboard và biểu đồ được giữ nguyên 100%.`);
+        clearForm();
+
+      } catch (err) {
+        console.error(err);
+        alert('Lỗi khi lưu vào tệp: ' + err.message + '\nNếu file đang mở trong Excel, vui lòng ĐÓNG file lại trước khi bấm Lưu.');
+      } finally {
+        btnSave.disabled = false;
+        btnSave.style.opacity = '1';
+      }
+    });
+
+    // Copy Row TSV
+    document.getElementById('btnCopyTsv').addEventListener('click', () => {
+      const inspDateStr = document.getElementById('inspDate').value || new Date().toISOString().slice(0, 10);
+      const dt = new Date(inspDateStr);
+      const year = dt.getFullYear().toString().slice(-2);
+      const monthNum = dt.getMonth() + 1;
+      const monthStr = monthNum < 10 ? '0' + monthNum : '' + monthNum;
+      const dayStr = dt.getDate() < 10 ? '0' + dt.getDate() : '' + dt.getDate();
+      const workWeek = parseInt(`${year}${monthStr}${dayStr}`);
+      const qtyInsp = Math.max(1, parseInt(document.getElementById('qtyInspected').value) || 1);
+
+      let totalDefects = 0;
+      let majorDefects = 0;
+      const defectCounts = DEFECTS.map(d => {
+        const cnt = defectValues[d.code] || 0;
+        totalDefects += cnt;
+        if (d.is_major) majorDefects += cnt;
+        return cnt;
+      });
+
+      const minorDefects = totalDefects - majorDefects;
+      const overallRate = totalDefects / qtyInsp;
+      const minorRate = minorDefects / qtyInsp;
+      const majorRate = majorDefects / qtyInsp;
+
+      const row = [
+        workWeek, monthNum, inspDateStr, document.getElementById('lineSelect').value,
+        workNoInput.value.trim(), document.getElementById('poNo').value.trim(),
+        document.getElementById('styleName').value.trim(), document.getElementById('skuNo').value.trim(),
+        document.getElementById('colorway').value.trim(), document.getElementById('shipTo').value.trim(),
+        parseInt(document.getElementById('orderQty').value) || 0, document.getElementById('exfDate').value.trim(),
+        qtyInsp, totalDefects, overallRate, minorRate, majorRate,
+        ...defectCounts
+      ];
+
+      navigator.clipboard.writeText(row.join('\t')).then(() => {
+        alert('Đã sao chép dòng dữ liệu vào Clipboard!\nBạn có thể dán (Ctrl+V) trực tiếp vào Excel.');
+      });
+    });
+
+    // Export Backup JSON
+    document.getElementById('btnExportJson').addEventListener('click', () => {
+      const data = {
+        work_no: workNoInput.value.trim(),
+        line: document.getElementById('lineSelect').value,
+        date: document.getElementById('inspDate').value,
+        defectValues: defectValues
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Inspection_${data.line}_${data.work_no || 'Record'}.json`;
+      a.click();
+    });
+  </script>
+</body>
+</html>
